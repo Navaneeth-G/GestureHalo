@@ -1,0 +1,4 @@
+After the model is final: Edge Impulse > Deployment > WebAssembly > Build, unzip, and copy
+  edge-impulse-standalone.js
+  edge-impulse-standalone.wasm
+into this folder (next to run-impulse.js). Do not rename them.

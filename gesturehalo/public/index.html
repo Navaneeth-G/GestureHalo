@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GestureHalo — Live Motion Recognition</title>
+<meta name="description" content="Gesture recognition from a phone’s accelerometer, running an Edge Impulse model in the browser as WebAssembly.">
+<style>
+:root{--bg:#060610;--s:#0f0f20;--s2:#141428;--b:rgba(100,100,255,.14);--t:#f0f0ff;--t2:#9090b0;--t3:#5a5a7a;--ok:#10d9a8;--bad:#ff6b7a;--c:#7c8fff}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:radial-gradient(900px 500px at 50% -10%,rgba(79,110,247,.18),transparent),var(--bg);color:var(--t);min-height:100vh;padding:20px 16px 40px;-webkit-tap-highlight-color:transparent}
+.app{max-width:560px;margin:0 auto;display:grid;gap:14px}
+header{text-align:center;padding:8px 0}
+h1{font-size:28px;letter-spacing:4px;font-weight:800}
+.sub{font-size:12px;color:var(--t3);margin-top:4px;letter-spacing:.5px}
+.pills{display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap}
+.pill{font-size:11px;padding:5px 12px;border-radius:99px;border:1px solid var(--b);color:var(--t2);background:var(--s)}
+.pill.ok{color:var(--ok);border-color:rgba(16,217,168,.4)}.pill.bad{color:var(--bad);border-color:rgba(255,107,122,.4)}
+.card{background:var(--s);border:1px solid var(--b);border-radius:18px;padding:18px}
+.stage{display:grid;place-items:center;padding:26px 0 8px}
+.halo{width:210px;height:210px;border-radius:50%;display:grid;place-items:center;text-align:center;border:6px solid var(--c);box-shadow:0 0 40px var(--c),inset 0 0 40px rgba(0,0,0,.5);transition:border-color .3s,box-shadow .3s;background:radial-gradient(circle,var(--s2),var(--bg))}
+.halo.live{animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{50%{transform:scale(1.04)}}
+.emo{font-size:44px;line-height:1}.lab{font-size:22px;font-weight:700;text-transform:capitalize;margin-top:6px}.conf{font-size:13px;color:var(--t2)}
+button{font:inherit;cursor:pointer;border:0;border-radius:12px}
+#start{width:100%;padding:15px;font-weight:700;font-size:15px;color:#fff;background:linear-gradient(135deg,#4f6ef7,#3a5bd9);box-shadow:0 8px 24px rgba(79,110,247,.3)}
+#start.on{background:var(--s2);color:var(--t2);box-shadow:none;border:1px solid var(--b)}
+.bar{display:grid;grid-template-columns:70px 1fr 46px;gap:10px;align-items:center;margin:10px 0;font-size:13px;text-transform:capitalize}
+.track{height:10px;background:var(--s2);border-radius:99px;overflow:hidden}.fill{height:100%;width:0;border-radius:99px;transition:width .15s}
+.bar span:last-child{text-align:right;color:var(--t2);font-variant-numeric:tabular-nums}
+h2{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--t3);margin-bottom:10px;font-weight:600}
+canvas{width:100%;height:130px;display:block;background:var(--s2);border-radius:12px}
+.legend{font-size:11px;color:var(--t3);margin-top:8px;display:flex;gap:14px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center}
+.stat b{display:block;font-size:20px}.stat small{font-size:11px;color:var(--t3)}
+ul{list-style:none;max-height:170px;overflow:auto;font-size:13px}
+li{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--b);color:var(--t2)}li b{color:var(--t);text-transform:capitalize}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:12px;color:var(--t2);margin-top:12px}
+.ghost{padding:8px 14px;background:var(--s2);color:var(--t2);border:1px solid var(--b);font-size:12px}
+#hint{font-size:12px;color:var(--t3);line-height:1.6}
+@media (prefers-reduced-motion:reduce){.halo.live{animation:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>GESTUREHALO</h1>
+    <div class="sub">Phone accelerometer · Edge Impulse · WebAssembly</div>
+    <div class="pills"><span class="pill" id="mPill">Model: loading…</span><span class="pill" id="sPill">Sensors: off</span></div>
+  </header>
+
+  <div class="card stage"><div class="halo" id="halo"><div><div class="emo" id="emo">◎</div><div class="lab" id="lab">Waiting</div><div class="conf" id="conf">Tap Start Sensors</div></div></div></div>
+  <button id="start">Start Sensors</button>
+
+  <div class="card"><h2>Probabilities</h2><div id="bars"><div class="conf">Predictions appear here once sensors are on.</div></div></div>
+
+  <div class="card"><h2>Accelerometer (m/s²)</h2><canvas id="cv" width="520" height="130"></canvas>
+    <div class="legend"><span style="color:#06d6d6">● X</span><span style="color:#ff6b7a">● Y</span><span style="color:#10d9a8">● Z</span></div>
+    <div class="row"><label><input type="checkbox" id="flip"> Flip axis signs (try this on iPhone)</label></div>
+  </div>
+
+  <div class="card stats">
+    <div class="stat"><b id="rate">—</b><small>Sensor rate (Hz)</small></div>
+    <div class="stat"><b id="buf">0 / 125</b><small>Buffer</small></div>
+    <div class="stat"><b id="inf">—</b><small>Inferences / s</small></div>
+  </div>
+
+  <div class="card"><h2>Gesture log</h2><ul id="log"><li>No gestures yet.</li></ul>
+    <div class="row"><span>Shows a gesture after 2 matching predictions. Under 60% = uncertain.</span><button class="ghost" id="csv">Export CSV</button></div></div>
+
+  <div class="card" id="hint">Motion sensors need HTTPS. iPhone: allow motion access when asked (Settings → Safari → Motion &amp; Orientation Access). Android Chrome: Site settings → Motion sensors → Allow. This is a prototype trained on a small personal dataset (one person, one phone).</div>
+</div>
+
+<script>
+(function () {
+  var N = 125, THRESH = 0.6;
+  var $ = function (id) { return document.getElementById(id); };
+  var COL = { idle: "#7c8fff", wave: "#06d6d6", circle: "#a78bfa", uncertain: "#5a5a7a" };
+  var EMO = { idle: "✋", wave: "👋", circle: "⭕", uncertain: "…" };
+  var xs = [], ys = [], zs = [], last = { x: 0, y: 0, z: 0 };
+  var clf = null, sensing = false, evCount = 0, infCount = 0, prev = "", stable = 0, logArr = [], bars = {};
+  var iOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  $("flip").checked = iOS;
+
+  function pill(id, text, cls) { var e = $(id); e.textContent = text; e.className = "pill " + (cls || ""); }
+  function hint(t) { $("hint").textContent = t; }
+
+  function loadScript(src) {
+    return new Promise(function (ok, no) {
+      var s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = no; document.body.appendChild(s);
+    });
+  }
+  (async function () {
+    try {
+      await loadScript("model/edge-impulse-standalone.js");
+      await loadScript("model/run-impulse.js");
+      clf = new EdgeImpulseClassifier(); await clf.init();
+      pill("mPill", "Model: ready", "ok");
+    } catch (e) {
+      clf = null; pill("mPill", "Model files missing", "bad");
+      hint("Model files not found. Copy edge-impulse-standalone.js and edge-impulse-standalone.wasm into public/model/ and redeploy. The live sensor graph still works without them.");
+    }
+  })();
+
+  $("start").onclick = async function () {
+    if (sensing) { window.removeEventListener("devicemotion", onMotion); sensing = false; $("start").textContent = "Start Sensors"; $("start").className = ""; pill("sPill", "Sensors: off"); $("halo").classList.remove("live"); return; }
+    if (!window.DeviceMotionEvent) { pill("sPill", "No motion sensor", "bad"); return; }
+    try {
+      if (typeof DeviceMotionEvent.requestPermission === "function") {
+        if ((await DeviceMotionEvent.requestPermission()) !== "granted") { pill("sPill", "Access denied", "bad"); return; }
+      }
+    } catch (e) { pill("sPill", "Access error", "bad"); return; }
+    window.addEventListener("devicemotion", onMotion);
+    sensing = true; xs = []; ys = []; zs = [];
+    $("start").textContent = "Stop Sensors"; $("start").className = "on"; pill("sPill", "Sensors: on", "ok"); $("halo").classList.add("live");
+  };
+
+  function onMotion(e) {
+    var a = e.accelerationIncludingGravity;
+    if (!a || a.x == null) return;
+    last = { x: a.x, y: a.y, z: a.z }; evCount++;
+  }
+
+  // Resample to 62.5 Hz (every 16 ms), the rate used for training
+  setInterval(function () {
+    if (!sensing) return;
+    var s = $("flip").checked ? -1 : 1;
+    xs.push(last.x * s); ys.push(last.y * s); zs.push(last.z * s);
+    if (xs.length > N) { xs.shift(); ys.shift(); zs.shift(); }
+    $("buf").textContent = xs.length + " / " + N;
+    draw();
+  }, 16);
+
+  setInterval(classify, 200); // same stride as the impulse (200 ms)
+  setInterval(function () {
+    $("rate").textContent = sensing ? evCount : "—"; $("inf").textContent = sensing && clf ? infCount : "—";
+    evCount = 0; infCount = 0;
+  }, 1000);
+
+  function classify() {
+    if (!sensing || !clf || xs.length < N) return;
+    var f = new Array(N * 3);
+    for (var i = 0; i < N; i++) { f[i * 3] = xs[i]; f[i * 3 + 1] = ys[i]; f[i * 3 + 2] = zs[i]; }
+    var r;
+    try { r = clf.classify(f); } catch (e) { hint("Classification error: " + e.message); return; }
+    infCount++; show(r.results);
+  }
+
+  function show(res) {
+    var top = res[0];
+    res.forEach(function (c) {
+      if (c.value > top.value) top = c;
+      if (!bars[c.label]) {
+        var d = document.createElement("div"); d.className = "bar";
+        d.innerHTML = "<span>" + c.label + "</span><div class=\"track\"><div class=\"fill\"></div></div><span>0%</span>";
+        if (!Object.keys(bars).length) $("bars").innerHTML = "";
+        $("bars").appendChild(d); bars[c.label] = d;
+      }
+      var b = bars[c.label];
+      b.querySelector(".fill").style.width = (c.value * 100).toFixed(0) + "%";
+      b.querySelector(".fill").style.background = COL[c.label] || COL.idle;
+      b.lastChild.textContent = (c.value * 100).toFixed(0) + "%";
+    });
+    var name = top.value >= THRESH ? top.label : "uncertain", col = COL[name] || COL.idle;
+    $("halo").style.setProperty("--c", col);
+    $("emo").textContent = EMO[name] || "◎"; $("lab").textContent = name;
+    $("conf").textContent = (top.value * 100).toFixed(0) + "% confidence";
+    stable = name === prev ? stable + 1 : 1; prev = name;
+    if (stable === 2 && name !== "uncertain" && (!logArr.length || logArr[logArr.length - 1].label !== name)) {
+      var t = new Date().toLocaleTimeString();
+      logArr.push({ time: t, label: name, confidence: top.value.toFixed(3) });
+      var ul = $("log"); if (logArr.length === 1) ul.innerHTML = "";
+      var li = document.createElement("li"); li.innerHTML = "<b>" + name + "</b><span>" + t + " · " + (top.value * 100).toFixed(0) + "%</span>";
+      ul.insertBefore(li, ul.firstChild);
+    }
+  }
+
+  var cv = $("cv"), cx = cv.getContext("2d");
+  function draw() {
+    var w = cv.width, h = cv.height; cx.clearRect(0, 0, w, h);
+    cx.strokeStyle = "rgba(255,255,255,.08)"; cx.beginPath(); cx.moveTo(0, h / 2); cx.lineTo(w, h / 2); cx.stroke();
+    [[xs, "#06d6d6"], [ys, "#ff6b7a"], [zs, "#10d9a8"]].forEach(function (p) {
+      cx.strokeStyle = p[1]; cx.lineWidth = 2; cx.beginPath();
+      p[0].forEach(function (v, i) {
+        var X = i / (N - 1) * w, Y = h / 2 - Math.max(-20, Math.min(20, v)) / 20 * (h / 2 - 4);
+        i ? cx.lineTo(X, Y) : cx.moveTo(X, Y);
+      });
+      cx.stroke();
+    });
+  }
+
+  $("csv").onclick = function () {
+    var rows = ["time,label,confidence"].concat(logArr.map(function (r) { return [r.time, r.label, r.confidence].join(","); }));
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([rows.join("\n")], { type: "text/csv" }));
+    a.download = "gesturehalo-session.csv"; a.click();
+  };
+})();
+</script>
+</body>
+</html>

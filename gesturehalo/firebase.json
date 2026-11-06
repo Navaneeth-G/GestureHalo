@@ -1,0 +1,8 @@
+{
+  "hosting": {
+    "target": "gesturehalo",
+    "public": "public",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**", "**/PUT_MODEL_FILES_HERE.txt"],
+    "headers": [{ "source": "**/*.wasm", "headers": [{ "key": "Content-Type", "value": "application/wasm" }] }]
+  }
+}
