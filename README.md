@@ -73,7 +73,7 @@ How to read this:
 
 ## 🛠️ Development notes
 
-A first model scored 85.98% on an initial test set of 9 recordings, mostly missing circle. I moved those recordings into training, added more varied circle, wave and idle recordings, retrained, and then recorded 15 new recordings for the final test above.
+A first model scored 85.98% on an initial test set of 9 recordings, mostly missing circle. I moved those recordings into training, added more varied circle and wave recordings, retrained, and then recorded 15 new recordings for the final test above.
 
 ## ▶️ Run it
 
